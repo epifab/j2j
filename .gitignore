@@ -1,0 +1,9 @@
+/.bsp/
+target/
+/.idea/
+
+.metals
+.vscode
+.history
+.bloop
+.lh
