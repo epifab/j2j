@@ -6,8 +6,9 @@ lazy val root = (project in file("."))
   .settings(
     name := "j2j",
     libraryDependencies ++= Seq(
-      "org.typelevel" %% "cats-core" % "2.7.0",
-      "com.github.pureconfig" %% "pureconfig" % "0.17.1",
-      "io.circe" %% "circe-core" % "0.14.1"
-    )
+      "org.typelevel"         %% "cats-core"    % "2.7.0",
+      "io.circe"              %% "circe-core"   % "0.14.1",
+      "io.circe"              %% "circe-parser" % "0.14.1",
+      "com.github.pureconfig" %% "pureconfig"   % "0.17.1",
+    ),
   )

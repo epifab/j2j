@@ -2,7 +2,7 @@ package j2j
 
 import scala.annotation.tailrec
 
-trait SeqSyntax {
+object SeqSyntax {
 
   implicit class SeqExt[T](seq: Seq[T]) {
 
@@ -32,5 +32,3 @@ trait SeqSyntax {
   }
 
 }
-
-object SeqSyntax extends SeqSyntax
