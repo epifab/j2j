@@ -1,18 +1,21 @@
 package j2j
 
-import cats.syntax.traverse.toTraverseOps
 import io.circe
 import io.circe.Json
 import io.circe.parser.{parse => parseJson}
 
-class ContextLookup(variables: Map[String, Expression[_]]) {
-  def lookup(jsonText: String): Either[circe.Error, Map[String, Json]] = {
-    for {
-      json <- parseJson(jsonText)
-      evaluator = new ExpressionEvaluator(json.hcursor)
-      evaluated <- variables.toVector.traverse { case (key, expression) =>
-        evaluator.evaluateJson(expression).map(key -> _)
-      }
-    } yield evaluated.toMap
+class ContextLookup(evaluable: Map[String, Expression]) {
+  def lookup(jsonText: String): Either[circe.Error, Map[String, Json]] =
+    parseJson(jsonText).map(lookup)
+
+  def lookup(json: Json): Map[String, Json] = {
+    val evaluator = new ExpressionEvaluator(json.hcursor)
+    evaluable.toVector.map { case (key, expression) =>
+      key -> evaluator.evaluateJson(expression)
+    }.toMap
   }
+}
+
+object ContextLookup {
+  def apply(evaluable: Map[String, Expression]): ContextLookup = new ContextLookup(evaluable)
 }

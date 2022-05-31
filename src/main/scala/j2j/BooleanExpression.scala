@@ -1,19 +1,17 @@
 package j2j
 
-import io.circe.Json
 import pureconfig.ConfigReader
 import pureconfig.error.{ConfigReaderFailures, ConvertFailure, KeyNotFound}
 
 sealed trait BooleanExpression
 
 object BooleanExpression {
-  import JsonConfigReader.jsonReader
 
-  case class Equals(src: Expression[Json], other: Expression[Json])   extends BooleanExpression
-  case class Includes(src: Expression[Json], other: Expression[Json]) extends BooleanExpression
-  case class Defined(path: Expression.JsonPath)                       extends BooleanExpression
-  case class And(all: List[BooleanExpression])                        extends BooleanExpression
-  case class Or(any: List[BooleanExpression])                         extends BooleanExpression
+  case class Equals(src: Expression, other: Expression)   extends BooleanExpression
+  case class Includes(src: Expression, other: Expression) extends BooleanExpression
+  case class Defined(path: Expression.JsonPath)           extends BooleanExpression
+  case class And(all: List[BooleanExpression])            extends BooleanExpression
+  case class Or(any: List[BooleanExpression])             extends BooleanExpression
 
   private def propertyReader[A](key: String, reader: ConfigReader[A]): ConfigReader[A] = {
     ConfigReader.fromCursor { cursor =>
@@ -26,13 +24,13 @@ object BooleanExpression {
   }
 
   val equalsReader: ConfigReader[Equals] =
-    propertyReader("src", Expression.reader[Json])
-      .zip(propertyReader("equals", Expression.reader[Json]))
+    propertyReader("src", Expression.reader)
+      .zip(propertyReader("equals", Expression.reader))
       .map { case (src, equalsTo) => Equals(src, equalsTo) }
 
   val includesReader: ConfigReader[Includes] =
-    propertyReader("src", Expression.reader[Json])
-      .zip(propertyReader("includes", Expression.reader[Json]))
+    propertyReader("src", Expression.reader)
+      .zip(propertyReader("includes", Expression.reader))
       .map { case (src, equalsTo) => Includes(src, equalsTo) }
 
   val definedReader: ConfigReader[BooleanExpression] = propertyReader("defined", Expression.JsonPath.reader.map(Defined))

@@ -1,8 +1,7 @@
 package j2j
 
 import cats.implicits.toTraverseOps
-import io.circe.{ACursor, DecodingFailure, Encoder, HCursor, Json}
-import io.circe.syntax.EncoderOps
+import io.circe.{Encoder, Json}
 import j2j.SeqSyntax.SeqExt
 import pureconfig.ConfigReader
 import pureconfig.error.{CannotConvert, ConfigReaderFailures, ConvertFailure, KeyNotFound}
@@ -10,99 +9,26 @@ import pureconfig.error.{CannotConvert, ConfigReaderFailures, ConvertFailure, Ke
 import scala.util.matching.Regex
 import scala.util.matching.Regex.Match
 
-sealed trait Expression[+T] {
-  def asJson: Expression[Json]
-}
+sealed trait Expression
 
 object Expression {
 
-  type Reader[T] = ConfigReader[Expression[T]]
-
-  case class Const[+T: Encoder](value: T) extends Expression[T] {
-    override def asJson: Const[Json] = Const(value.asJson)
-  }
+  case class Const(value: Json) extends Expression
 
   object Const {
-    implicit def reader[T: ConfigReader: Encoder]: ConfigReader[Const[T]] = ConfigReader[T].map(Const(_))
+    def apply[T: Encoder](value: T): Const   = Const(Encoder[T].apply(value))
+    implicit val reader: ConfigReader[Const] = JsonConfigReader.jsonReader.map(Const(_))
   }
 
-  sealed trait JsonEvaluationResult {
-    def toJson: Json
-    def toJsonArr: Vector[Json]
-  }
-
-  object JsonEvaluationResult {
-    case object Empty extends JsonEvaluationResult {
-      override def toJson: Json            = Json.Null
-      override def toJsonArr: Vector[Json] = Vector.empty
-    }
-
-    case class One(json: Json) extends JsonEvaluationResult {
-      override def toJson: Json            = json
-      override def toJsonArr: Vector[Json] = Vector(json)
-    }
-
-    case class Many(results: Vector[JsonEvaluationResult]) extends JsonEvaluationResult {
-      override def toJson: Json            = Json.arr(results.flatMap(_.toJsonArr): _*)
-      override def toJsonArr: Vector[Json] = results.flatMap(_.toJsonArr)
-    }
-  }
-
-  sealed trait JsonPath extends Expression[Nothing] {
+  sealed trait JsonPath extends Expression {
     def /:(s: JsonPath.Segment): JsonPath = JsonPath.NonEmpty(s, this)
-    override def asJson: Expression[Json] = this
-    def evaluate(cursor: ACursor): JsonEvaluationResult
   }
 
   object JsonPath {
 
-    case object Empty extends JsonPath {
-      override def evaluate(cursor: ACursor): JsonEvaluationResult =
-        cursor.focus.fold[JsonEvaluationResult](JsonEvaluationResult.Empty)(JsonEvaluationResult.One)
-    }
+    case object Empty extends JsonPath
 
-    case class NonEmpty(head: Segment, tail: JsonPath) extends JsonPath {
-      private def indexFor[_](arr: Seq[_])(n: Int): Int = n match {
-        case negative if negative < 0 => arr.length + negative
-        case positive                 => positive
-      }
-
-      override def evaluate(cursor: ACursor): JsonEvaluationResult = head match {
-        case Property(key) => tail.evaluate(cursor.downField(key))
-
-        case Wildcard =>
-          (for {
-            c   <- cursor.focus
-            arr <- c.asArray.orElse(c.asObject.map(_.values.toVector))
-            results = JsonEvaluationResult.Many(arr.map(j => tail.evaluate(j.hcursor)))
-          } yield results).getOrElse(JsonEvaluationResult.Empty)
-
-        case ArrayElement(index) =>
-          (for {
-            c   <- cursor.focus
-            arr <- c.asArray
-            realIndex = indexFor(arr)(index)
-            element <-
-              try Some(arr.apply(realIndex))
-              catch { case _: IndexOutOfBoundsException => None }
-          } yield tail.evaluate(element.hcursor)).getOrElse(JsonEvaluationResult.Empty)
-
-        case ArrayRange(from, to) =>
-          (for {
-            c   <- cursor.focus
-            arr <- c.asArray
-
-            actualFrom = from.map(indexFor(arr)).getOrElse(0)
-            actualTo   = to.map(indexFor(arr)).getOrElse(arr.length)
-
-            children =
-              if (actualFrom > actualTo) arr.slice(actualTo, actualFrom + 1).reverse
-              else arr.slice(actualFrom, actualTo + 1)
-
-          } yield JsonEvaluationResult.Many(children.map(j => tail.evaluate(j.hcursor)))).getOrElse(JsonEvaluationResult.Empty)
-
-      }
-    }
+    case class NonEmpty(head: Segment, tail: JsonPath) extends JsonPath
 
     def apply(segments: Seq[Segment]): JsonPath = segments.foldRight[JsonPath](Empty)(_ /: _)
 
@@ -157,44 +83,40 @@ object Expression {
       ConfigReader.stringConfigReader.emap(s => parse(s).left.map(reason => CannotConvert(s, "JsonPath", reason)))
   }
 
-  case class Conditional[+T](
-      value: Expression[T],
+  case class Conditional(
+      value: Expression,
       when: Option[BooleanExpression] = None,
-      defaultTo: Option[Expression[T]] = None,
-  ) extends Expression[T] {
-    override def asJson: Expression[Json] = Conditional(value.asJson, when, defaultTo.map(_.asJson))
-  }
+      defaultTo: Option[Expression] = None,
+  ) extends Expression
 
   object Conditional {
-    implicit def reader[T: ConfigReader: Encoder]: ConfigReader[Conditional[T]] = {
+    implicit val reader: ConfigReader[Conditional] = {
       ConfigReader.fromCursor { cursor =>
         for {
           obj <- cursor.asMap
           value <- obj.get("value") match {
-            case Some(valueCursor) => Expression.reader[T].from(valueCursor)
+            case Some(valueCursor) => Expression.reader.from(valueCursor)
             case None              => Left(ConfigReaderFailures(ConvertFailure(KeyNotFound("value", obj.keys.toSet), cursor)))
           }
           when    <- obj.get("when").traverse(BooleanExpression.reader.from)
-          default <- obj.get("default-to").traverse(Expression.reader[T].from)
+          default <- obj.get("default-to").traverse(Expression.reader.from)
         } yield Conditional(value, when, default)
       }
     }
   }
 
-  case class Expressions[+T](expressions: Vector[Expression[T]]) extends Expression[T] {
-    override def asJson: Expression[Json] = Expressions(expressions.map(_.asJson))
-  }
+  case class Expressions(expressions: Vector[Expression]) extends Expression
 
   object Expressions {
-    implicit def reader[T: ConfigReader: Encoder]: ConfigReader[Expressions[T]] =
-      ConfigReader[Vector[Expression[T]]].map(Expressions(_))
+    implicit val reader: ConfigReader[Expressions] =
+      ConfigReader[Vector[Expression]].map(Expressions(_))
   }
 
-  implicit def reader[T: ConfigReader: Encoder]: ConfigReader[Expression[T]] = {
+  implicit val reader: ConfigReader[Expression] = {
     JsonPath.reader
-      .orElse(Const.reader[T])
-      .orElse(Conditional.reader[T])
-      .orElse(Expressions.reader[T])
+      .orElse(Const.reader)
+      .orElse(Conditional.reader)
+      .orElse(Expressions.reader)
   }
 
 }
