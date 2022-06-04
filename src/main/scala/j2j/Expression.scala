@@ -1,8 +1,8 @@
 package j2j
 
 import cats.implicits.toTraverseOps
-import io.circe.{Encoder, Json}
 import j2j.SeqSyntax.SeqExt
+import io.circe.{Encoder, Json}
 import pureconfig.ConfigReader
 import pureconfig.error.{CannotConvert, ConfigReaderFailures, ConvertFailure, KeyNotFound}
 

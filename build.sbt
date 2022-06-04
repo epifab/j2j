@@ -2,9 +2,12 @@ ThisBuild / version := "0.1.0-SNAPSHOT"
 
 ThisBuild / scalaVersion := "2.13.8"
 
-lazy val root = (project in file("."))
+lazy val j2j = (project in file("."))
   .settings(
     name := "j2j",
+    scalacOptions ++= Seq(
+      "-Xsource:3",
+    ),
     libraryDependencies ++= Seq(
       "org.typelevel"         %% "cats-core"    % "2.7.0",
       "io.circe"              %% "circe-core"   % "0.14.1",

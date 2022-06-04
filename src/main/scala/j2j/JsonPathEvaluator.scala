@@ -1,10 +1,8 @@
 package j2j
 
-import io.circe.{ACursor, Json}
 import j2j.Expression.JsonPath
 import j2j.Expression.JsonPath.{ArrayElement, ArrayRange, Property, Wildcard}
-
-import scala.collection.immutable
+import io.circe.ACursor
 
 object JsonPathEvaluator {
 
