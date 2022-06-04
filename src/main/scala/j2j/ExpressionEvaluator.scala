@@ -1,14 +1,14 @@
 package j2j
 
 import cats.syntax.traverse.toTraverseOps
-import j2j.Expression.{Conditional, Const, Expressions, JsonPath}
+import j2j.Expression.{Conditional, Const, Expressions, JsonPath, Placeholder}
 import io.circe.{ACursor, Decoder, DecodingFailure, Json}
 
-class ExpressionEvaluator(cursor: ACursor) {
+class ExpressionEvaluator(cursor: ACursor, context: Map[String, Json]) {
 
-  def mapCursor(f: ACursor => ACursor): ExpressionEvaluator = new ExpressionEvaluator(f(cursor))
+  def mapCursor(f: ACursor => ACursor): ExpressionEvaluator = new ExpressionEvaluator(f(cursor), context)
 
-  def optional: Option[ExpressionEvaluator] = cursor.focus.map(j => new ExpressionEvaluator(j.hcursor))
+  def optional: Option[ExpressionEvaluator] = cursor.focus.map(j => new ExpressionEvaluator(j.hcursor, context))
 
   def evaluateJson(mapping: Expression): Json =
     mapping match {
@@ -23,6 +23,8 @@ class ExpressionEvaluator(cursor: ACursor) {
 
       case const @ Const(_) => const.value
 
+      case Placeholder(key) => context.getOrElse(key, Json.Null)
+
       case Expressions(expressions) => Json.arr(expressions.map(evaluateJson)*)
     }
 
@@ -34,7 +36,9 @@ class ExpressionEvaluator(cursor: ACursor) {
 
       case jsonPath: JsonPath => JsonPathEvaluator.evaluate(cursor, jsonPath).asJsonArr
 
-      case const @ Const(_) => Vector(const.value)
+      case const: Const => Vector(const.value)
+
+      case placeholder: Placeholder => JsonPathEvaluator.evaluate(evaluateJson(placeholder).hcursor, JsonPath.Empty).asJsonArr
 
       case Expressions(expressions) => expressions.map(evaluateJson)
     }

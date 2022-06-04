@@ -1,5 +1,5 @@
 {
-  "%%test": "%%code",
-  "letters": "%%letters",
-  "glossary": "%%glossary"
+  "%{test}": "{code}",
+  "letters": "%{letters}",
+  "glossary": "%{glossary}"
 }

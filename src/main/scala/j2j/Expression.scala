@@ -20,6 +20,16 @@ object Expression {
     implicit val reader: ConfigReader[Const] = JsonConfigReader.jsonReader.map(Const(_))
   }
 
+  case class Placeholder(key: String) extends Expression
+
+  object Placeholder {
+    private val Regex = "%\\{([a-zA-Z\\d_-]+)}".r
+    implicit val reader: ConfigReader[Placeholder] = ConfigReader.stringConfigReader.emap {
+      case Regex(key) => Right(Placeholder(key))
+      case s          => Left(CannotConvert(s, "Placeholder", "Not a valid placeholder"))
+    }
+  }
+
   sealed trait JsonPath extends Expression {
     def /:(s: JsonPath.Segment): JsonPath = JsonPath.NonEmpty(s, this)
   }
@@ -114,6 +124,7 @@ object Expression {
 
   implicit val reader: ConfigReader[Expression] = {
     JsonPath.reader
+      .orElse(Placeholder.reader)
       .orElse(Const.reader)
       .orElse(Conditional.reader)
       .orElse(Expressions.reader)
