@@ -24,10 +24,14 @@ object Expression {
 
   object Placeholder {
     private val Regex = "%\\{([a-zA-Z\\d_-]+)}".r
-    implicit val reader: ConfigReader[Placeholder] = ConfigReader.stringConfigReader.emap {
-      case Regex(key) => Right(Placeholder(key))
-      case s          => Left(CannotConvert(s, "Placeholder", "Not a valid placeholder"))
+
+    def parse(s: String): Option[Placeholder] = s match {
+      case Regex(key) => Some(Placeholder(key))
+      case _          => None
     }
+
+    implicit val reader: ConfigReader[Placeholder] =
+      ConfigReader.stringConfigReader.emap(s => parse(s).toRight(CannotConvert(s, "Placeholder", "Not a valid placeholder")))
   }
 
   sealed trait JsonPath extends Expression {
