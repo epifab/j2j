@@ -4,7 +4,7 @@ import cats.syntax.traverse.toTraverseOps
 import j2j.Expression.{Conditional, Const, Expressions, JsonPath, Placeholder}
 import io.circe.{ACursor, Decoder, DecodingFailure, Json}
 
-class ExpressionEvaluator(cursor: ACursor, context: Map[String, Json]) {
+class ExpressionEvaluator(cursor: ACursor, context: PartialFunction[String, Json]) {
 
   def mapCursor(f: ACursor => ACursor): ExpressionEvaluator = new ExpressionEvaluator(f(cursor), context)
 
@@ -23,7 +23,9 @@ class ExpressionEvaluator(cursor: ACursor, context: Map[String, Json]) {
 
       case const @ Const(_) => const.value
 
-      case Placeholder(key) => context.getOrElse(key, Json.Null)
+      case Placeholder(key) if context.isDefinedAt(key) => context(key)
+
+      case Placeholder(key) => Json.Null
 
       case Expressions(expressions) => Json.arr(expressions.map(evaluateJson)*)
     }
