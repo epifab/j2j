@@ -1,8 +1,9 @@
 package j2j
 
 import cats.implicits.toTraverseOps
-import j2j.SeqSyntax.SeqExt
 import io.circe.{Encoder, Json}
+import j2j.Expression.JsonPath.Segment
+import j2j.SeqSyntax.SeqExt
 import pureconfig.ConfigReader
 import pureconfig.error.{CannotConvert, ConfigReaderFailures, ConvertFailure, KeyNotFound}
 
@@ -20,29 +21,36 @@ object Expression {
     implicit val reader: ConfigReader[Const] = JsonConfigReader.jsonReader.map(Const(_))
   }
 
-  case class Placeholder(key: String) extends Expression
+  case class Placeholder(key: String, path: JsonPath) extends Expression
 
   object Placeholder {
-    private val Regex = "%\\{([a-zA-Z\\d_-]+)}".r
+    private val Regex = "%\\{([a-zA-Z\\d_-]+)}(.*)".r
 
-    def parse(s: String): Option[Placeholder] = s match {
-      case Regex(key) => Some(Placeholder(key))
-      case _          => None
+    def parse(s: String): Either[String, Placeholder] = s match {
+      case Regex(key, rest) => JsonPath.parse("$" + rest).map(path => Placeholder(key, path))
+      case _                => Left("Not a placeholder")
     }
 
     implicit val reader: ConfigReader[Placeholder] =
-      ConfigReader.stringConfigReader.emap(s => parse(s).toRight(CannotConvert(s, "Placeholder", "Not a valid placeholder")))
+      ConfigReader.stringConfigReader.emap(s => parse(s).left.map(CannotConvert(s, "Placeholder", _)))
   }
 
   sealed trait JsonPath extends Expression {
     def /:(s: JsonPath.Segment): JsonPath = JsonPath.NonEmpty(s, this)
+    def toList: List[Segment]
+
+    override def toString: String = s"JsonPath($$${toList.mkString})"
   }
 
   object JsonPath {
 
-    case object Empty extends JsonPath
+    case object Empty extends JsonPath {
+      override val toList: List[Segment] = Nil
+    }
 
-    case class NonEmpty(head: Segment, tail: JsonPath) extends JsonPath
+    case class NonEmpty(head: Segment, tail: JsonPath) extends JsonPath {
+      override val toList: List[Segment] = head :: tail.toList
+    }
 
     def apply(segments: Seq[Segment]): JsonPath = segments.foldRight[JsonPath](Empty)(_ /: _)
 
@@ -50,10 +58,21 @@ object Expression {
       def toPath: JsonPath = NonEmpty(this, Empty)
     }
 
-    case class Property(key: String)                          extends Segment
-    case class ArrayElement(index: Int)                       extends Segment
-    case class ArrayRange(from: Option[Int], to: Option[Int]) extends Segment
-    case object Wildcard                                      extends Segment
+    case class Property(key: String) extends Segment {
+      override def toString: String = s".$key"
+    }
+
+    case class ArrayElement(index: Int) extends Segment {
+      override def toString: String = s"[$index]"
+    }
+
+    case class ArrayRange(from: Option[Int], to: Option[Int]) extends Segment {
+      override def toString: String = s"[${from.getOrElse("")}:${to.getOrElse("")}]"
+    }
+
+    case object Wildcard extends Segment {
+      override def toString: String = ".*"
+    }
 
     private val propertyRegexDot      = "\\.([a-zA-Z\\d_-]+)".r
     private val propertyRegexBrackets = "\\['([a-zA-Z\\d_-]+)']".r

@@ -23,9 +23,10 @@ class ExpressionEvaluator(cursor: ACursor, context: PartialFunction[String, Json
 
       case const @ Const(_) => const.value
 
-      case Placeholder(key) if context.isDefinedAt(key) => context(key)
+      case Placeholder(key, path) if context.isDefinedAt(key) =>
+        new ExpressionEvaluator(context(key).hcursor, PartialFunction.empty).evaluateJson(path)
 
-      case Placeholder(key) => Json.Null
+      case Placeholder(_, _) => Json.Null
 
       case Expressions(expressions) => Json.arr(expressions.map(evaluateJson)*)
     }

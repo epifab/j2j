@@ -5,7 +5,6 @@ import io.circe.parser.parse as parseJson
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.prop.TableDrivenPropertyChecks
-import pureconfig.ConfigSource
 
 class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenPropertyChecks {
 
@@ -30,13 +29,13 @@ class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenProp
 
     val mappingsStr =
       """
-        |test = "$.a[0]",
-        |code = "$.a[1]",
-        |letters = "$.a[2].*",
-        |glossary = "$.a[3]",
-        |t = "$.a[3].t",
-        |e = "$.a[3].e",
-        |s = "$.a[3].s"
+        |test = "$.a[0]"
+        |code = "$.a[1]"
+        |letters = "$.a[2].*"
+        |glossary = "$.a[3]"
+        |t = "%{glossary}.t"
+        |e = "%{glossary}.e"
+        |s = "%{glossary}.s"
         |""".stripMargin
 
     val templateStr =
@@ -46,7 +45,10 @@ class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenProp
         |  "processedBy": "%{author}",
         |  "%{test}": "%{code}",
         |  "letters": "%{letters}",
-        |  "glossary": "%{glossary}"
+        |  "glossary": "%{glossary}",
+        |  "t": "%{t}",
+        |  "e": "%{e}",
+        |  "s": "%{s}"
         |}
         |""".stripMargin
 
@@ -66,12 +68,15 @@ class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenProp
         |    "t": 7,
         |    "e": 3,
         |    "s": 5
-        |  }
+        |  },
+        |  "t": 7,
+        |  "e": 3,
+        |  "s": 5
         |}
         |""".stripMargin
 
     val results = for {
-      mappings <- ConfigSource.string(mappingsStr).load[Map[String, Expression]]
+      mappings <- NamedExpression.loadList(mappingsStr.split("\n").toList)
       template <- parseJson(templateStr)
       done     <- new JsonTransformer(mappings, template, superContext)(inputStr)
     } yield done
