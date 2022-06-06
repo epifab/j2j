@@ -36,6 +36,22 @@ class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenProp
         |t = "%{glossary}.t"
         |e = "%{glossary}.e"
         |s = "%{glossary}.s"
+        |assertions = [
+        | {
+        |   value: "e=3",
+        |   when: {
+        |     src: "%{e}",
+        |     equals: 3
+        |   }
+        | },
+        | {
+        |   value: "e=4",
+        |   when: {
+        |     src: "%{e}",
+        |     equals: 4
+        |   }
+        | }
+        |]
         |""".stripMargin
 
     val templateStr =
@@ -48,7 +64,8 @@ class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenProp
         |  "glossary": "%{glossary}",
         |  "t": "%{t}",
         |  "e": "%{e}",
-        |  "s": "%{s}"
+        |  "s": "%{s}",
+        |  "assertions": "%{assertions}"
         |}
         |""".stripMargin
 
@@ -71,7 +88,8 @@ class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenProp
         |  },
         |  "t": 7,
         |  "e": 3,
-        |  "s": 5
+        |  "s": 5,
+        |  "assertions": ["e=3"]
         |}
         |""".stripMargin
 

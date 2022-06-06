@@ -28,7 +28,7 @@ class ExpressionEvaluator(cursor: ACursor, context: PartialFunction[String, Json
 
       case Placeholder(_, _) => Json.Null
 
-      case Expressions(expressions) => Json.arr(expressions.map(evaluateJson)*)
+      case Expressions(expressions) => Json.arr(expressions.flatMap(evaluateJsonArr)*)
     }
 
   def evaluateJsonArr(mapping: Expression): Vector[Json] =
