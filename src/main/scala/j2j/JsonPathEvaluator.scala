@@ -1,7 +1,6 @@
 package j2j
 
-import j2j.Expression.JsonPath
-import j2j.Expression.JsonPath.{ArrayElement, ArrayRange, Property, Wildcard}
+import j2j.JsonPath.{ArrayElement, ArrayRange, Property, Wildcard}
 import io.circe.ACursor
 
 object JsonPathEvaluator {
@@ -11,6 +10,7 @@ object JsonPathEvaluator {
   implicit class CursorExt(cursor: ACursor) {
 
     def evaluate(path: JsonPath): JsonEvaluationResult = path match {
+
       case JsonPath.NonEmpty(Property(key), tail) =>
         cursor.downField(key).evaluate(tail)
 
@@ -45,7 +45,7 @@ object JsonPathEvaluator {
 
         } yield JsonEvaluationResult.Many(children.map(j => j.hcursor.evaluate(tail)))).getOrElse(JsonEvaluationResult.Empty)
 
-      case JsonPath.Empty =>
+      case _: JsonPath.Empty =>
         cursor.focus.fold[JsonEvaluationResult](JsonEvaluationResult.Empty)(JsonEvaluationResult.One)
 
     }

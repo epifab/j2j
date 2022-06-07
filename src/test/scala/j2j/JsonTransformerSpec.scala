@@ -2,9 +2,12 @@ package j2j
 
 import io.circe.Json
 import io.circe.parser.parse as parseJson
+import j2j.syntax.*
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.prop.TableDrivenPropertyChecks
+
+import java.time.Instant
 
 class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenPropertyChecks {
 
@@ -27,53 +30,6 @@ class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenProp
         |}
         |""".stripMargin
 
-    val mappingsStr =
-      """
-        |test = "$.a[0]"
-        |code = "$.a[1]"
-        |letters = "$.a[2].*"
-        |glossary = "$.a[3]"
-        |t = "%{glossary}.t"
-        |e = "%{glossary}.e"
-        |s = "%{glossary}.s"
-        |assertions = [
-        | {
-        |   value: "e=3",
-        |   when: {
-        |     src: "%{e}",
-        |     equals: 3
-        |   }
-        | },
-        | {
-        |   value: "e=4",
-        |   when: {
-        |     src: "%{e}",
-        |     equals: 4
-        |   }
-        | }
-        |]
-        |""".stripMargin
-
-    val templateStr =
-      """
-        |{
-        |  "processedAt": "%{time}",
-        |  "processedBy": "%{author}",
-        |  "%{test}": "%{code}",
-        |  "letters": "%{letters}",
-        |  "glossary": "%{glossary}",
-        |  "t": "%{t}",
-        |  "e": "%{e}",
-        |  "s": "%{s}",
-        |  "assertions": "%{assertions}"
-        |}
-        |""".stripMargin
-
-    val superContext: PartialFunction[String, Json] = {
-      case "time"   => Json.fromString("2021-03-14T15:09:00Z")
-      case "author" => Json.fromString("j2j")
-    }
-
     val expectedOutput =
       """
         |{
@@ -93,13 +49,44 @@ class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenProp
         |}
         |""".stripMargin
 
-    val results = for {
-      mappings <- NamedExpression.loadList(mappingsStr.split("\n").toList)
-      template <- parseJson(templateStr)
-      done     <- new JsonTransformer(mappings, template, superContext)(inputStr)
-    } yield done
+    val generate = new Template {
 
-    results shouldBe parseJson(expectedOutput)
+      override def apply(implicit json: Json): Either[String, Json] = {
+
+        val a        = $ / "a"
+        val test     = a / 0
+        val code     = a / 1
+        val letters  = a / 2 / *
+        val glossary = a / 3
+        val t        = glossary / "t"
+        val e        = glossary / "e"
+        val s        = glossary / "s"
+        val assertions = ExpressionList(
+          Value("e=3").when(e matches Value(3)),
+          Value("e=4").when(e matches Value(4)),
+        )
+
+        val time   = Variable(Instant.now)
+        val author = Value("Epifab")
+
+        json"""
+          |{
+          |  "processedAt": $time,
+          |  "processedBy": $author,
+          |  $test: $code,
+          |  "letters": $letters,
+          |  "glossary": $glossary,
+          |  "t": $t,
+          |  "e": $e,
+          |  "s": $s,
+          |  "assertions": $assertions
+          |}
+          |"""
+      }
+    }
+
+    val output = generate(parseJson(inputStr).getOrElse(fail("Invalid JSON in input")))
+    output shouldBe parseJson(expectedOutput)
 
   }
 

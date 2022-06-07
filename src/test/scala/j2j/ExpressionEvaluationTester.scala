@@ -10,8 +10,7 @@ import pureconfig.ConfigSource
 case class Scenario private (
     hint: String,
     json: String,
-    context: Map[String, Json],
-    config: String,
+    config: Expression,
     expectedOutput: Json,
 )
 
@@ -19,28 +18,18 @@ object Scenario {
   def apply[A: Encoder](
       hint: String,
       json: String,
-      expr: String,
+      expr: Expression,
       expectedOutput: A,
   ): Scenario =
-    new Scenario(hint, json, Map.empty, expr, expectedOutput.asJson)
-
-  def apply[A: Encoder, B: Encoder](
-      hint: String,
-      json: String,
-      context: Map[String, B],
-      expr: String,
-      expectedOutput: A,
-  ): Scenario =
-    new Scenario(hint, json, context.view.mapValues(_.asJson).toMap, expr, expectedOutput.asJson)
+    new Scenario(hint, json, expr, expectedOutput.asJson)
 }
 
 abstract class ExpressionEvaluationTester(scenarios: Scenario*) extends AnyFreeSpec with Matchers with TableDrivenPropertyChecks {
 
-  forAll(Table("Scenario", scenarios*)) { case Scenario(hint, jsonString, context, exprString, expectedOutput) =>
+  forAll(Table("Scenario", scenarios*)) { case Scenario(hint, jsonString, expr, expectedOutput) =>
     hint in {
       val json = parseJson(jsonString).getOrElse(fail(s"invalid json: $jsonString"))
-      val expr = ConfigSource.string(exprString).load[Expression].getOrElse(fail(s"invalid expression: $exprString"))
-      new ExpressionEvaluator(json.hcursor, context).evaluateJson(expr) shouldBe expectedOutput
+      new ExpressionEvaluator(json.hcursor).evaluateJson(expr) shouldBe expectedOutput
     }
   }
 

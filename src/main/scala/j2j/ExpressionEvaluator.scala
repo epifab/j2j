@@ -1,49 +1,43 @@
 package j2j
 
 import cats.syntax.traverse.toTraverseOps
-import j2j.Expression.{Conditional, Const, Expressions, JsonPath, Placeholder}
 import io.circe.{ACursor, Decoder, DecodingFailure, Json}
 
-class ExpressionEvaluator(cursor: ACursor, context: PartialFunction[String, Json]) {
+class ExpressionEvaluator(cursor: ACursor) {
 
-  def mapCursor(f: ACursor => ACursor): ExpressionEvaluator = new ExpressionEvaluator(f(cursor), context)
+  def mapCursor(f: ACursor => ACursor): ExpressionEvaluator = new ExpressionEvaluator(f(cursor))
 
-  def optional: Option[ExpressionEvaluator] = cursor.focus.map(j => new ExpressionEvaluator(j.hcursor, context))
+  def optional: Option[ExpressionEvaluator] = cursor.focus.map(j => new ExpressionEvaluator(j.hcursor))
 
   def evaluateJson(mapping: Expression): Json =
     mapping match {
-      case Conditional(value, when, defaultTo) =>
+      case ConditionalExpression(value, when, defaultTo) =>
         Option
-          .when(evaluateWhen(when))(evaluateJson(value))
-          .filterNot(_.isNull)
-          .orElse(defaultTo.map(evaluateJson))
-          .getOrElse(Json.Null)
+          .when(evaluateBoolean(when))(evaluateJson(value))
+          .getOrElse(evaluateJson(defaultTo))
 
       case jsonPath: JsonPath => JsonPathEvaluator.evaluate(cursor, jsonPath).asJson
 
-      case const @ Const(_) => const.value
+      case Value(value) => value
 
-      case Placeholder(key, path) if context.isDefinedAt(key) =>
-        new ExpressionEvaluator(context(key).hcursor, PartialFunction.empty).evaluateJson(path)
+      case Variable(f) => f()
 
-      case Placeholder(_, _) => Json.Null
-
-      case Expressions(expressions) => Json.arr(expressions.flatMap(evaluateJsonArr)*)
+      case ExpressionList(expressions) => Json.arr(expressions.toVector.flatMap(evaluateJsonArr)*)
     }
 
   def evaluateJsonArr(mapping: Expression): Vector[Json] =
     mapping match {
-      case Conditional(value, when, defaultTo) =>
-        if (evaluateWhen(when)) evaluateJsonArr(value)
-        else defaultTo.map(evaluateJsonArr).getOrElse(Vector.empty)
+      case ConditionalExpression(value, when, defaultTo) =>
+        if (evaluateBoolean(when)) evaluateJsonArr(value)
+        else evaluateJsonArr(defaultTo)
 
       case jsonPath: JsonPath => JsonPathEvaluator.evaluate(cursor, jsonPath).asJsonArr
 
-      case const: Const => Vector(const.value)
+      case Value(value) => Vector(value)
 
-      case placeholder: Placeholder => JsonPathEvaluator.evaluate(evaluateJson(placeholder).hcursor, JsonPath.Empty).asJsonArr
+      case Variable(f) => Vector(f())
 
-      case Expressions(expressions) => expressions.map(evaluateJson)
+      case ExpressionList(expressions) => expressions.toVector.map(evaluateJson)
     }
 
   def evaluate[A: Decoder](mapping: Expression): Either[DecodingFailure, A] =
@@ -56,16 +50,15 @@ class ExpressionEvaluator(cursor: ACursor, context: PartialFunction[String, Json
       .getOrElse(json.as[Option[A]].map(_.toVector))
   }
 
-  private def evaluateWhen(when: Option[BooleanExpression]): Boolean = when.forall(evaluateBoolean)
-
   private def evaluateBoolean(condition: BooleanExpression): Boolean = condition match {
-    case BooleanExpression.And(expressions)     => expressions.map(evaluateBoolean).forall(identity)
-    case BooleanExpression.Or(expressions)      => expressions.map(evaluateBoolean).exists(identity)
+    case BooleanExpression.And(a, b)            => evaluateBoolean(a) && evaluateBoolean(b)
+    case BooleanExpression.Or(a, b)             => evaluateBoolean(a) || evaluateBoolean(b)
+    case BooleanExpression.Not(expression)      => !evaluateBoolean(expression)
     case BooleanExpression.Equals(src, other)   => evaluateJsonArr(src).toSet == evaluateJsonArr(other).toSet
     case BooleanExpression.Includes(src, other) => evaluateJsonArr(src).contains(evaluateJson(other))
     case BooleanExpression.OneOf(src, other)    => evaluateJsonArr(other).contains(evaluateJson(src))
     case BooleanExpression.Overlaps(src, other) => evaluateJsonArr(src).toSet.intersect(evaluateJsonArr(other).toSet).nonEmpty
-    case BooleanExpression.Defined(path)        => evaluateJsonArr(path).nonEmpty
+    case BooleanExpression.NotNull(path)        => evaluateJsonArr(path).nonEmpty
   }
 
 }
