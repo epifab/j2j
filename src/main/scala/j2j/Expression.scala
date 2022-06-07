@@ -7,6 +7,7 @@ import j2j.SeqSyntax.SeqExt
 import pureconfig.ConfigReader
 import pureconfig.error.{CannotConvert, ConfigReaderFailures, ConvertFailure, KeyNotFound}
 
+import scala.reflect.ClassTag
 import scala.util.matching.Regex
 import scala.util.matching.Regex.Match
 
@@ -35,21 +36,51 @@ object Expression {
       ConfigReader.stringConfigReader.emap(s => parse(s).left.map(CannotConvert(s, "Placeholder", _)))
   }
 
+  sealed trait Star
+
   sealed trait JsonPath extends Expression {
     def /:(s: JsonPath.Segment): JsonPath = JsonPath.NonEmpty(s, this)
     def toList: List[Segment]
+    def ++(j: JsonPath): JsonPath
 
-    override def toString: String = s"JsonPath($$${toList.mkString})"
+    override def toString: String = s"$$${toList.mkString}"
+
+    def /(s: String): JsonPath
+    def /(i: Int): JsonPath
+    def /(star: Star): JsonPath
+    def /(range: (Int, Int)): JsonPath
+    def /[X: ClassTag](range: (Star, Int)): JsonPath
+    def /[X: ClassTag, Y: ClassTag](range: (Int, Star)): JsonPath
   }
 
   object JsonPath {
 
+    case object * extends Star
+
     case object Empty extends JsonPath {
-      override val toList: List[Segment] = Nil
+      override val toList: List[Segment]     = Nil
+      override def ++(j: JsonPath): JsonPath = j
+
+      override def /(s: String): JsonPath                                    = NonEmpty(Property(s), Empty)
+      override def /(i: Int): JsonPath                                       = NonEmpty(ArrayElement(i), Empty)
+      override def /(star: Star): JsonPath                                   = NonEmpty(Wildcard, Empty)
+      override def /(range: (Int, Int)): JsonPath                            = NonEmpty(ArrayRange(Some(range._1), Some(range._2)), Empty)
+      override def /[X: ClassTag](range: (Star, Int)): JsonPath              = NonEmpty(ArrayRange(None, Some(range._2)), Empty)
+      override def /[X: ClassTag, Y: ClassTag](range: (Int, Star)): JsonPath = NonEmpty(ArrayRange(Some(range._1), None), Empty)
     }
 
+    val $ : JsonPath = Empty
+
     case class NonEmpty(head: Segment, tail: JsonPath) extends JsonPath {
-      override val toList: List[Segment] = head :: tail.toList
+      override val toList: List[Segment]     = head :: tail.toList
+      override def ++(j: JsonPath): JsonPath = NonEmpty(head, tail ++ j)
+
+      override def /(s: String): JsonPath                                    = NonEmpty(head, tail / s)
+      override def /(i: Int): JsonPath                                       = NonEmpty(head, tail / i)
+      override def /(star: Star): JsonPath                                   = NonEmpty(head, tail / *)
+      override def /(range: (Int, Int)): JsonPath                            = NonEmpty(head, tail / range)
+      override def /[X: ClassTag](range: (Star, Int)): JsonPath              = NonEmpty(head, tail / range)
+      override def /[X: ClassTag, Y: ClassTag](range: (Int, Star)): JsonPath = NonEmpty(head, tail / [X, Y] range)
     }
 
     def apply(segments: Seq[Segment]): JsonPath = segments.foldRight[JsonPath](Empty)(_ /: _)
