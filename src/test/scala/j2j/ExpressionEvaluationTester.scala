@@ -2,10 +2,10 @@ package j2j
 import io.circe.parser.parse as parseJson
 import io.circe.syntax.EncoderOps
 import io.circe.{Encoder, Json}
+import j2j.EvaluationSyntax.JsonEvaluationExtension
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.prop.TableDrivenPropertyChecks
-import pureconfig.ConfigSource
 
 case class Scenario private (
     hint: String,
@@ -29,7 +29,7 @@ abstract class ExpressionEvaluationTester(scenarios: Scenario*) extends AnyFreeS
   forAll(Table("Scenario", scenarios*)) { case Scenario(hint, jsonString, expr, expectedOutput) =>
     hint in {
       val json = parseJson(jsonString).getOrElse(fail(s"invalid json: $jsonString"))
-      new ExpressionEvaluator(json.hcursor).evaluateJson(expr) shouldBe Right(expectedOutput)
+      json.evaluateAsJson(expr) shouldBe Right(expectedOutput)
     }
   }
 

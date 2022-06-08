@@ -11,6 +11,7 @@ lazy val j2j = (project in file("."))
     libraryDependencies ++= Seq(
       "org.typelevel"         %% "cats-core"     % "2.7.0",
       "io.circe"              %% "circe-core"    % "0.14.1",
+      "io.circe"              %% "circe-generic" % "0.14.1",
       "io.circe"              %% "circe-parser"  % "0.14.1",
       "com.github.pureconfig" %% "pureconfig"    % "0.17.1",
       "org.scala-lang"         % "scala-reflect" % scalaVersion.value,
