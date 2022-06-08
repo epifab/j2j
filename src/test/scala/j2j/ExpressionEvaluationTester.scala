@@ -29,7 +29,7 @@ abstract class ExpressionEvaluationTester(scenarios: Scenario*) extends AnyFreeS
   forAll(Table("Scenario", scenarios*)) { case Scenario(hint, jsonString, expr, expectedOutput) =>
     hint in {
       val json = parseJson(jsonString).getOrElse(fail(s"invalid json: $jsonString"))
-      new ExpressionEvaluator(json.hcursor).evaluateJson(expr) shouldBe expectedOutput
+      new ExpressionEvaluator(json.hcursor).evaluateJson(expr) shouldBe Right(expectedOutput)
     }
   }
 

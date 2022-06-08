@@ -1,38 +1,32 @@
 package j2j
 
-import io.circe.{ACursor, Json}
+import io.circe.Json
 import io.circe.parser.parse as parseJson
 
 object syntax {
 
   implicit class JInterpolation(sc: StringContext)(implicit context: Json) {
-    def json(subs: Expression*): Either[String, Json] = {
-      val pit = sc.parts.iterator
-      val sit = subs.iterator
-      // Note parts.length == subs.length + 1
-      val sb = new java.lang.StringBuilder(pit.next())
-      while (sit.hasNext) {
-        sb.append(new ExpressionEvaluator(context.hcursor).evaluateJson(sit.next()).noSpaces)
-        sb.append(pit.next())
+    def json(subs: Expression*): Either[EvaluationError, Json] = {
+      val evaluator = new ExpressionEvaluator(context.hcursor)
+
+      val pit: Iterator[Either[EvaluationError, String]] = sc.parts.iterator.map(Right(_))
+      val sit: Iterator[Either[EvaluationError, String]] = subs.iterator.map(evaluator.evaluateJson).map(_.map(_.noSpaces))
+
+      val reduceFunc: (Either[EvaluationError, String], Either[EvaluationError, String]) => Either[EvaluationError, String] = {
+        case (a, b) =>
+          for {
+            s1 <- a
+            s2 <- b
+          } yield s1 + s2
       }
-      parseJson(sb.toString.stripMargin).left.map(_.message)
+
+      val first = pit.next()
+
+      (Iterator(first) ++ sit.zip(pit).map(reduceFunc.tupled))
+        .reduce(reduceFunc)
+        .map(_.stripMargin)
+        .flatMap(s => parseJson(s).left.map(e => TemplateError(s, e.message)))
     }
-  }
-
-  implicit class CursorExt(json: ACursor) {
-    def evaluateJson(expression: Expression): Json =
-      new ExpressionEvaluator(json).evaluateJson(expression)
-
-    def evaluateJsonArr(expression: Expression): Vector[Json] =
-      new ExpressionEvaluator(json).evaluateJsonArr(expression)
-  }
-
-  implicit class JsonExt(json: Json) {
-    def evaluateJson(expression: Expression): Json =
-      json.hcursor.evaluateJson(expression)
-
-    def evaluateJsonArr(expression: Expression): Vector[Json] =
-      json.hcursor.evaluateJsonArr(expression)
   }
 
 }

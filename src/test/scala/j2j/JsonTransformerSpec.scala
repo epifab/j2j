@@ -33,9 +33,10 @@ class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenProp
     val expectedOutput =
       """
         |{
-        |  "processedAt": "2021-03-14T15:09:00Z",
+        |  "v1": 1,
+        |  "v2": 2,
         |  "processedBy": "j2j",
-        |  "test": 7357,
+        |  "code-7357": 7357,
         |  "letters": ["t", "e", "s", "t"],
         |  "glossary": {
         |    "t": 7,
@@ -49,29 +50,36 @@ class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenProp
         |}
         |""".stripMargin
 
-    val generate = new Template {
+    val transformer: Transformer = new Transformer {
 
-      override def apply(implicit json: Json): Either[String, Json] = {
+      private val a        = $ / "a"
+      private val code     = a / 1
+      private val letters  = a / 2 / *
+      private val glossary = a / 3
+      private val t        = glossary / "t"
+      private val e        = glossary / "e"
+      private val s        = glossary / "s"
+      private val assertions = ExpressionList(
+        Value("e=3").when(e matches Value(3)),
+        Value("e=4").when(e matches Value(4)),
+      )
 
-        val a        = $ / "a"
-        val test     = a / 0
-        val code     = a / 1
-        val letters  = a / 2 / *
-        val glossary = a / 3
-        val t        = glossary / "t"
-        val e        = glossary / "e"
-        val s        = glossary / "s"
-        val assertions = ExpressionList(
-          Value("e=3").when(e matches Value(3)),
-          Value("e=4").when(e matches Value(4)),
-        )
+      val test: Expression = for {
+        tCode <- t.as[Int]
+        eCode <- e.as[Int]
+        sCode <- s.as[Int]
+      } yield s"code-$tCode$eCode$sCode$tCode"
 
-        val time   = Variable(Instant.now)
-        val author = Value("Epifab")
+      private val versions = Iterator.from(0)
+      private val version  = Variable(versions.next).as[Int].map(_ + 1)
+      private val author   = Value("j2j")
+
+      override def apply(implicit json: Json): Either[EvaluationError, Json] = {
 
         json"""
           |{
-          |  "processedAt": $time,
+          |  "v1": $version,
+          |  "v2": $version,
           |  "processedBy": $author,
           |  $test: $code,
           |  "letters": $letters,
@@ -85,7 +93,9 @@ class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenProp
       }
     }
 
-    val output = generate(parseJson(inputStr).getOrElse(fail("Invalid JSON in input")))
+    val input  = parseJson(inputStr).getOrElse(fail("Invalid JSON in input"))
+    val output = transformer(input)
+
     output shouldBe parseJson(expectedOutput)
 
   }

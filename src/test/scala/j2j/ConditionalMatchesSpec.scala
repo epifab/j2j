@@ -1,6 +1,6 @@
 package j2j
 
-class ConditionalEqualsSpec
+class ConditionalMatchesSpec
     extends ExpressionEvaluationTester(
       Scenario(
         hint = "JSON path matches expected value",

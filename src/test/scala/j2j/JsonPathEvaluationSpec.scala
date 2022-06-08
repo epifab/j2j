@@ -101,7 +101,7 @@ class JsonPathEvaluationSpec
       Scenario(
         hint = "Querying deeply nested array range part III",
         json = """["abc"]""",
-        expr = $ / (*, 10),
+        expr = $ / * / 10,
         expectedOutput = Vector.empty[Int],
       ),
       Scenario(

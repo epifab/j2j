@@ -17,7 +17,7 @@ class ConditionalDefinedSpec
       Scenario(
         hint = "Nested property is defined",
         json = """{"qux": {"baz": 123}}""",
-        expr = Value(true).when(($ / "qux" / "bar").notNull),
+        expr = Value(true).when(($ / "qux" / "baz").notNull),
         expectedOutput = true,
       ),
       Scenario(

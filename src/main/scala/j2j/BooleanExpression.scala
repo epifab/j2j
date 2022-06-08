@@ -8,8 +8,8 @@ sealed trait BooleanExpression {
 
 object BooleanExpression {
 
-  case class Equals(src: Expression, other: Expression)      extends BooleanExpression
-  case class Includes(src: Expression, other: Expression)    extends BooleanExpression
+  case class Matches(src: Expression, other: Expression)     extends BooleanExpression
+  case class Contains(src: Expression, other: Expression)    extends BooleanExpression
   case class OneOf(src: Expression, other: Expression)       extends BooleanExpression
   case class Overlaps(src: Expression, other: Expression)    extends BooleanExpression
   case class NotNull(expression: Expression)                 extends BooleanExpression

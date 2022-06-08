@@ -1,10 +1,10 @@
 package j2j
 
-import cats.data.NonEmptyVector
-import io.circe.{Encoder, Json}
+import io.circe.{Decoder, Encoder, Json}
 import j2j.SeqSyntax.SeqExt
 
 import scala.reflect.ClassTag
+import scala.reflect.runtime.universe.TypeTag
 import scala.util.matching.Regex
 import scala.util.matching.Regex.Match
 
@@ -13,15 +13,45 @@ sealed trait Expression {
   def when(booleanExpression: BooleanExpression, default: Expression = Value.Empty): ConditionalExpression =
     ConditionalExpression(this, booleanExpression, default)
 
-  def defaultTo(default: Expression): ConditionalExpression =
+  def defaultTo(default: Expression): Expression =
     ConditionalExpression(this, notNull, default)
 
-  def matches(that: Expression): BooleanExpression  = BooleanExpression.Equals(this, that)
-  def includes(that: Expression): BooleanExpression = BooleanExpression.Includes(this, that)
+  def as[T: Decoder: TypeTag]: TypedExpression[T] =
+    TypedExpression(this)
+
+  def matches(that: Expression): BooleanExpression  = BooleanExpression.Matches(this, that)
+  def contains(that: Expression): BooleanExpression = BooleanExpression.Contains(this, that)
   def oneOf(that: Expression): BooleanExpression    = BooleanExpression.OneOf(this, that)
   def overlaps(that: Expression): BooleanExpression = BooleanExpression.Overlaps(this, that)
   def notNull: BooleanExpression                    = BooleanExpression.NotNull(this)
 
+}
+
+case class TypedExpression[T: Decoder: TypeTag](expression: Expression) extends Expression {
+  def map[U: Encoder](f: T => U): Expression =
+    MappedExpression(this, f)
+
+  def flatMap(f: T => Expression): Expression =
+    FlatMappedExpression(this, f)
+}
+
+case class MappedExpression[T: Decoder: TypeTag, U: Encoder](expression: Expression, f: T => U) extends Expression {
+  def apply(json: Json): Either[EvaluationError, Json] =
+    json
+      .as[T]
+      .map(f)
+      .map(Encoder[U].apply)
+      .left
+      .map(_ => ExtractionError[T](json))
+}
+
+case class FlatMappedExpression[T: Decoder: TypeTag](expression: Expression, f: T => Expression) extends Expression {
+  def apply(json: Json): Either[EvaluationError, Expression] =
+    json
+      .as[T]
+      .map(f)
+      .left
+      .map(_ => ExtractionError[T](json))
 }
 
 case class Value private (value: Json) extends Expression
@@ -79,7 +109,7 @@ object JsonPath {
     override def /(i: Int): JsonPath                                       = NonEmpty(head, tail / i)
     override def /(star: Star): JsonPath                                   = NonEmpty(head, tail / star)
     override def /(range: (Int, Int)): JsonPath                            = NonEmpty(head, tail / range)
-    override def /[X: ClassTag](range: (Star, Int)): JsonPath              = NonEmpty(head, tail / range)
+    override def /[X: ClassTag](range: (Star, Int)): JsonPath              = NonEmpty(head, tail / [X] range)
     override def /[X: ClassTag, Y: ClassTag](range: (Int, Star)): JsonPath = NonEmpty(head, tail / [X, Y] range)
   }
 
@@ -151,10 +181,8 @@ case class ConditionalExpression(
     defaultTo: Expression,
 ) extends Expression
 
-case class ExpressionList private (expressions: NonEmptyVector[Expression]) extends Expression {
-  def toVector: Vector[Expression] = expressions.toVector
-}
+case class ExpressionList private (expressions: Vector[Expression]) extends Expression
 
 object ExpressionList {
-  def apply(head: Expression, tail: Expression*): ExpressionList = new ExpressionList(NonEmptyVector(head, tail.toVector))
+  def apply(expressions: Expression*): ExpressionList = new ExpressionList(expressions.toVector)
 }
