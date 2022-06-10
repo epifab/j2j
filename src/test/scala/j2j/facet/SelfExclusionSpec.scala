@@ -15,7 +15,8 @@ class SelfExclusionSpec extends AnyFreeSpec with Matchers {
     (for {
       inputJson <- parseJson(inputStr)
       output    <- SelfExclusion.extract(inputJson)
-    } yield output) shouldBe parseJson(expectedOutputStr).flatMap(_.as[OutputEvent])
+      result    <- output.toRight("This message should have been processed")
+    } yield result) shouldBe parseJson(expectedOutputStr).flatMap(_.as[OutputEvent])
   }
 
 }

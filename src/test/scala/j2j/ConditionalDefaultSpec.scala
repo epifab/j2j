@@ -5,7 +5,7 @@ class ConditionalDefaultSpec
       Scenario(
         hint = "Default to constant for non-existing JSON property",
         json = """{}""",
-        expr = ($ / "foo").defaultTo(Value.json("bar")),
+        expr = ($ / "foo").defaultTo(Value("bar")),
         expectedOutput = "bar",
       ),
       Scenario(
@@ -23,7 +23,7 @@ class ConditionalDefaultSpec
       Scenario(
         hint = "Default when condition fails",
         json = """{}""",
-        expr = Value(1).when(Value("a") matches Value("b"), Value(2)),
+        expr = Value(1).when(Value("a") equalsTo Value("b"), Value(2)),
         expectedOutput = 2,
       ),
     )

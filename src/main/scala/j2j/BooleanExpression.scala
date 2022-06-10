@@ -1,36 +1,72 @@
 package j2j
 
-import io.circe.Json
+import io.circe.{ACursor, Json}
+import j2j.BooleanExpression.*
+import j2j.ConsoleOps.*
+import j2j.props.Matcher
 
-sealed trait BooleanExpression extends Printable {
-  def and(that: BooleanExpression): BooleanExpression = BooleanExpression.And(this, that)
-  def or(that: BooleanExpression): BooleanExpression  = BooleanExpression.Or(this, that)
-  def unary_not: BooleanExpression                    = BooleanExpression.Not(this)
+sealed trait BooleanExpression extends Expression[Boolean] {
+
+  def &&(that: Expression[Boolean]): And = And(this, that)
+
+  def ||(that: Expression[Boolean]): Or = Or(this, that)
+
+  def unary_! : Not = Not(this)
+
+  def evalBoolean(root: ACursor): Either[EvaluationError, Boolean]
+
+  override def evalT(root: ACursor): Either[EvaluationError, Boolean] =
+    evalBoolean(root)
+
+  override def evalAsJson(root: ACursor): Either[EvaluationError, Json] =
+    evalBoolean(root).map(Json.fromBoolean)
+
 }
 
 object BooleanExpression {
 
-  sealed abstract class PrintableBooleanExpression2(name: String) extends BooleanExpression {
-    def a: Printable
-    def b: Printable
+  sealed abstract class UnaryBooleanExpr(val name: String) extends BooleanExpression {
+    def a: Expression[?]
 
-    override def prettyPrint(indent: Int): String =
-      a.prettyPrint(indent + 1) +
-        (newLine(indent) + Console.CYAN + Console.BOLD + name + Console.RESET) +
-        (newLine(indent) + b.prettyPrint(indent + 1))
+    override def print(implicit context: PrinterContext): String =
+      blue(bold(name)) + indent(a)
   }
 
-  case class Matches(a: Expression[?], b: Expression[?])  extends PrintableBooleanExpression2("matches")
-  case class Contains(a: Expression[?], b: Expression[?]) extends PrintableBooleanExpression2("contains")
-  case class OneOf(a: Expression[?], b: Expression[?])    extends PrintableBooleanExpression2("oneOf")
-  case class Overlaps(a: Expression[?], b: Expression[?]) extends PrintableBooleanExpression2("overlaps")
-  case class NotNull(a: Expression[?]) extends PrintableBooleanExpression2("!=") { override val b: Value[Json] = Value.empty[Json] }
-  case class And(a: BooleanExpression, b: BooleanExpression) extends PrintableBooleanExpression2("and")
-  case class Or(a: BooleanExpression, b: BooleanExpression)  extends PrintableBooleanExpression2("or")
+  sealed abstract class BinaryBooleanExpr[A, B](val name: String) extends BooleanExpression {
+    def a: Expression[?]
+    def b: Expression[?]
 
-  case class Not(src: BooleanExpression) extends BooleanExpression {
-    override def prettyPrint(indent: Int): String =
-      (Console.CYAN + Console.BOLD + "!" + Console.RESET) + src.prettyPrint(indent + 1)
+    override def print(implicit context: PrinterContext): String =
+      a.print + newLine(blue(bold(name))) + b.printToNewLine
+  }
+
+  case class Matches[A, B](a: Expression[A], b: Expression[B])(implicit cmp: Matcher[A, B]) extends BinaryBooleanExpr(cmp.name) {
+    override def evalBoolean(root: ACursor): Either[EvaluationError, Boolean] =
+      for {
+        a <- a.evalT(root)
+        b <- b.evalT(root)
+      } yield cmp(a, b)
+  }
+
+  case class And(a: Expression[Boolean], b: Expression[Boolean]) extends BinaryBooleanExpr("and") {
+    override def evalBoolean(root: ACursor): Either[EvaluationError, Boolean] =
+      for {
+        a <- a.evalT(root)
+        b <- b.evalT(root)
+      } yield a && b
+  }
+
+  case class Or(a: Expression[Boolean], b: Expression[Boolean]) extends BinaryBooleanExpr("or") {
+    override def evalBoolean(root: ACursor): Either[EvaluationError, Boolean] =
+      for {
+        a <- a.evalT(root)
+        b <- b.evalT(root)
+      } yield a || b
+  }
+
+  case class Not(a: Expression[Boolean]) extends UnaryBooleanExpr("not") {
+    override def evalBoolean(root: ACursor): Either[EvaluationError, Boolean] =
+      a.evalT(root).map(!_)
   }
 
 }

@@ -21,12 +21,6 @@ class ConditionalOverlapsSpec
         expectedOutput = true,
       ),
       Scenario(
-        hint = "A single element is evaluated as a list",
-        json = "{}",
-        expr = Value(true).when(Value(2) overlaps Value(Vector(1, 2, 3))),
-        expectedOutput = true,
-      ),
-      Scenario(
         hint = "Some common elements between the two lists",
         json = "{}",
         expr = Value(true).when(Value(Vector(1, 2)) overlaps Value(Vector(2, 3))),
@@ -41,7 +35,7 @@ class ConditionalOverlapsSpec
       Scenario(
         hint = "Src element not in list",
         json = "{}",
-        expr = Value(true).when(Value(1) overlaps Value(Vector(3, 4))),
+        expr = Value(true).when(Value(Vector(1)) overlaps Value(Vector(3, 4))),
         expectedOutput = None,
       ),
     )

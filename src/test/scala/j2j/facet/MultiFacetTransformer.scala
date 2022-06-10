@@ -1,21 +1,18 @@
 package j2j.facet
 
+import io.circe.Json
 import j2j.*
+import j2j.SeqSyntax.SeqExt
 import j2j.facet.model.OutputEvent
 
-class MultiFacetTransformer(facets: Seq[SimpleFacetTransformer]) extends EvaluationSyntax {
-  def apply(json: Json): Option[Either[EvaluationError, OutputEvent]] =
-    facets
-      .find(_.active(json) == Right(true))
-      .map(_.extract(json))
+class MultiFacetTransformer(facets: Seq[SimpleFacetTransformer]) {
+  def apply(json: Json): Either[EvaluationError, Option[OutputEvent]] =
+    facets.traverseSome(_.extract(json))
 
 }
 
 object MultiFacetTransformer {
 
-  def prod = new MultiFacetTransformer(
-    SelfExclusion ::
-      Nil,
-  )
+  def prod = new MultiFacetTransformer(SelfExclusion :: Nil)
 
 }

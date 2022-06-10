@@ -1,13 +1,9 @@
 package j2j
 
-import io.circe.Json
 import io.circe.parser.parse as parseJson
-import j2j.EvaluationSyntax.*
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.prop.TableDrivenPropertyChecks
-
-import java.time.Instant
 
 class JsonTransformerSpec extends AnyFreeSpec with Matchers with TableDrivenPropertyChecks {
 

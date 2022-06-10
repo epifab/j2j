@@ -26,10 +26,4 @@ class ConditionalOneOfSpec
         expr = Value(true).when(($ / "foo") oneOf Value(Vector(1, 2, 3))),
         expectedOutput = None,
       ),
-      Scenario(
-        hint = "[1, 2] is NOT one of [1, 2, 3]",
-        json = "{}",
-        expr = Value(true).when(Value(Vector(1, 2)) oneOf Value(Vector(1, 2, 1936, 3))),
-        expectedOutput = None,
-      ),
     )

@@ -1,5 +1,8 @@
 package j2j
 
+import io.circe.Json
+import j2j.props.{AreComparable, CanContain}
+
 class ConditionalContainsSpec
     extends ExpressionEvaluationTester(
       Scenario(
@@ -17,19 +20,15 @@ class ConditionalContainsSpec
       Scenario(
         hint = "JSON number is included in constants",
         json = """{"foo": 1936}""",
-        expr = Value(true).when(Value(Vector(1, 2, 1936, 3)) contains ($ / "foo")),
+        expr = Value(true).when(
+          Value(Vector(1, 2, 1936, 3)) contains ($ / "foo"),
+        ),
         expectedOutput = true,
       ),
       Scenario(
         hint = "JSON number is NOT included in constants",
         json = """{"foo": 1936}""",
         expr = Value(true).when(Value(Vector(1, 2, 3)) contains ($ / "foo")),
-        expectedOutput = None,
-      ),
-      Scenario(
-        hint = "[1, 2] is NOT included in [1, 2, 3]",
-        json = "{}",
-        expr = Value(true).when(Value(Vector(1, 2, 3)) contains Value(Vector(1, 2))),
         expectedOutput = None,
       ),
     )
