@@ -10,31 +10,28 @@ trait EvaluationSyntax {
   type Json = CirceJson
 
   implicit class ExpressionConversion[T](t: T) {
-    def toExpression(implicit e: Encoder[T]): Expression = Value(t)
+    def toExpression(implicit e: Encoder[T]): Expression[T] = Value(t)
   }
 
-  implicit class ExpressionListConversion(t: Seq[Expression]) {
-    def toExpressionList: ExpressionList = ExpressionList(t*)
+  implicit class ExpressionListConversion[T](t: Seq[Expression[T]]) {
+    def toExpressionList: ExpressionList[T] = ExpressionList(t*)
   }
 
   implicit class JsonEvaluationExtension(json: Json) extends ExpressionEvaluator {
     val evaluator: ExpressionEvaluator = ExpressionEvaluator(json)
 
-    def evaluateAsJson(expression: Expression): Either[EvaluationError, Json] =
+    def evaluateAsJson(expression: Expression[?]): Either[EvaluationError, Json] =
       evaluator.evaluateAsJson(expression)
 
-    def evaluateAs[A: Decoder: TypeTag](expression: Expression): Either[EvaluationError, A] =
-      evaluator.evaluateAs(expression)
+    def evaluate[A: Decoder: TypeTag](expression: Expression[A]): Either[EvaluationError, A] =
+      evaluator.evaluate(expression)
 
-    def evaluateAsVector[A: Decoder: TypeTag](expression: Expression): Either[EvaluationError, Vector[A]] =
-      evaluator.evaluateAsVector(expression)
-
-    def evaluateAsOption[A: Decoder: TypeTag](expression: Expression): Either[EvaluationError, Option[A]] =
-      evaluator.evaluateAsOption(expression)
+    def evaluateVector[A: Decoder: TypeTag](expression: Expression[A]): Either[EvaluationError, Vector[A]] =
+      evaluator.evaluateVector(expression)
   }
 
   implicit class JInterpolation(sc: StringContext)(implicit context: Json) {
-    def json(subs: Expression*): Either[EvaluationError, Json] = {
+    def json(subs: Expression[?]*): Either[EvaluationError, Json] = {
 
       val pit: Iterator[Either[EvaluationError, String]] = sc.parts.iterator.map(Right(_))
       val sit: Iterator[Either[EvaluationError, String]] = subs.iterator.map(context.evaluateAsJson).map(_.map(_.noSpaces))

@@ -1,42 +1,54 @@
 package j2j.facet
 
 import j2j.*
+import j2j.facet.model.{OutputAction, PermissionDenial}
+
+import java.time.Instant
 
 object SelfExclusion extends SimpleFacetTransformer {
 
-  override protected val $eventType: ConditionalExpression =
-    Value("exclusion").when(($body / "type") matches Value("exclusion"))
+  override protected val $eventType: ConditionalExpression[String] =
+    Value("exclusion").when(($body / "type") matches Value("excluded"))
 
-  override protected val $universe: JsonPath = $header / "universe"
-  override protected val $statuses: JsonPath = $body / "newValues" / "status"
-  override protected val $playerId: JsonPath = $body / "newValues" / "id"
+  override protected val $universe: Expression[String] = ($header / "universe").as[String]
+  override protected val $playerId: Expression[String] = ($body / "newValues" / "playerId").as[String]
 
-  private val exclusionReason =
-    ($body / "newValues" / "blockReason").defaultTo(Value("self-excluded")).as[String]
+  private val $endTime: Expression[Option[Instant]] =
+    ($body / "newValues" / "exclusion" / "end")
+      .defaultTo($body / "newValues" / "exclusion" / "realizedEnd")
+      .when(($body / "newValues" / "exclusion" / "type") overlaps Value(Vector("temporary", "timeout")))
+      .as[Option[Instant]]
 
-  private val blockAccount =
-    exclusionReason
-      .map(reason =>
-        Action(
-          "blockAccount",
-          reason = reason,
-          revoked = Vector("canLogin", "canDeposit", "canBet"),
-        ),
-      )
-
-  private val torturePerson =
-    Action(
-      "torturePerson",
-      reason = "cruelty",
-      granted = Vector("canDeposit"),
-      revoked = Vector("canBet"),
-    ).toExpression
-
-  override protected val $actions: List[Expression] = {
-    List(
-      blockAccount when (($statuses contains Value("excluded")) and ($universe matches Value("wh-mga"))),
-      torturePerson when (($statuses contains Value("excluded")) and ($universe matches Value("wh-eu-de"))),
+  private val $blockAccount: Expression[OutputAction] = {
+    $endTime.map(endTime =>
+      OutputAction(
+        "blockAccount",
+        List("canLogin", "canDeposit", "canBet"),
+        "notification",
+        endTime,
+      ),
     )
-  }
+  }.when($universe oneOf Value(List("wh-mga", "wh-eu-de", "wh-eu-dk")))
+
+  println($blockAccount)
+
+  override protected val $actions: List[Expression[OutputAction]] =
+    List($blockAccount)
+
+  override protected val $denials: Expression[Map[String, Vector[PermissionDenial]]] =
+    $actions.toExpressionList
+      .map(
+        _.flatMap(action =>
+          action.relatesToPermissions
+            .map(permission =>
+              permission -> Vector(
+                PermissionDenial(
+                  "self-excluded",
+                  "Permission not granted because of self-exclusion",
+                ),
+              ),
+            ),
+        ).toMap,
+      )
 
 }

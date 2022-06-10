@@ -1,31 +1,51 @@
 package j2j.facet
 
 import j2j.*
+import j2j.facet.model.{Data, NewValues, OutputAction, OutputBody, OutputEvent, PermissionDenial}
 
 trait SimpleFacetTransformer extends EvaluationSyntax {
 
   protected val $body: JsonPath   = $ / "body"
   protected val $header: JsonPath = $ / "header"
 
-  protected def $eventType: ConditionalExpression
-  protected def $universe: Expression
-  protected def $statuses: Expression
-  protected def $playerId: Expression
-  protected def $actions: List[Expression]
+  protected def $eventType: ConditionalExpression[String]
+  protected def $universe: Expression[String]
+  protected def $playerId: Expression[String]
+  protected def $actions: List[Expression[OutputAction]]
+  protected def $denials: Expression[Map[String, Vector[PermissionDenial]]]
 
   def active(json: Json): Either[EvaluationError, Boolean] =
-    json.evaluateAsOption[String]($eventType).map(_.nonEmpty)
+    json.evaluateOption[String]($eventType).map(_.nonEmpty)
 
-  def extract(json: Json): Either[EvaluationError, Facet] = {
-    val expr = for {
-      eventType <- $eventType.as[String]
-      universe  <- $universe.as[String]
-      playerId  <- $playerId.as[String]
-      statuses  <- $statuses.as[Vector[String]]
-      actions   <- ExpressionList($actions*).as[Vector[Action]]
-    } yield Facet(eventType, universe, playerId, statuses, actions)
+  private val $outputEvent = for {
+    header    <- $header
+    eventType <- $eventType
+    universe  <- $universe
+    playerId  <- $playerId
+    denials   <- $denials
+    actions   <- ExpressionList($actions*)
+    _ = println(eventType)
+    _ = println(universe)
+    _ = println(playerId)
+    _ = println(denials)
+    _ = println(actions)
+    _ = println("*" * 100)
+  } yield OutputEvent(
+    header,
+    OutputBody(
+      eventType,
+      NewValues(
+        playerId,
+        universe,
+        Data(
+          permissionDenials = denials,
+          actions = actions,
+          context = Map.empty,
+        ),
+      ),
+    ),
+  )
 
-    json.evaluateAs[Facet](expr)
-  }
+  def extract(json: Json): Either[EvaluationError, OutputEvent] = json.evaluate($outputEvent)
 
 }

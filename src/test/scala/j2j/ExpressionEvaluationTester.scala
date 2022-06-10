@@ -10,7 +10,7 @@ import org.scalatest.prop.TableDrivenPropertyChecks
 case class Scenario private (
     hint: String,
     json: String,
-    config: Expression,
+    config: Expression[Json],
     expectedOutput: Json,
 )
 
@@ -18,10 +18,10 @@ object Scenario {
   def apply[A: Encoder](
       hint: String,
       json: String,
-      expr: Expression,
+      expr: Expression[?],
       expectedOutput: A,
   ): Scenario =
-    new Scenario(hint, json, expr, expectedOutput.asJson)
+    new Scenario(hint, json, expr.asJson, expectedOutput.asJson)
 }
 
 abstract class ExpressionEvaluationTester(scenarios: Scenario*) extends AnyFreeSpec with Matchers with TableDrivenPropertyChecks {

@@ -3,7 +3,7 @@ package j2j
 import io.circe.Json
 import j2j.EvaluationSyntax.JInterpolation
 
-object MyTransformer extends Transformer {
+object MyTransformer {
 
   private val a        = $ / "a"
   private val code     = a / 1
@@ -17,7 +17,7 @@ object MyTransformer extends Transformer {
     Value("e=4").when(e matches Value(4)),
   )
 
-  val test: Expression = for {
+  val test: Expression[String] = for {
     tCode <- t.as[Int]
     eCode <- e.as[Int]
     sCode <- s.as[Int]
@@ -27,7 +27,7 @@ object MyTransformer extends Transformer {
   private val version  = Variable(versions.next).as[Int].map(_ + 1)
   private val author   = Value("j2j")
 
-  override def apply(implicit json: Json): Either[EvaluationError, Json] = {
+  def apply(implicit json: Json): Either[EvaluationError, Json] = {
 
     json"""
           |{

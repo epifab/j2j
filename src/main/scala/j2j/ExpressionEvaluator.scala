@@ -7,13 +7,14 @@ import scala.reflect.runtime.universe.TypeTag
 
 trait ExpressionEvaluator {
 
-  def evaluateAsJson(expression: Expression): Either[EvaluationError, Json]
+  def evaluateAsJson(expression: Expression[?]): Either[EvaluationError, Json]
 
-  def evaluateAs[A: Decoder: TypeTag](expression: Expression): Either[EvaluationError, A]
+  def evaluate[A: Decoder: TypeTag](expression: Expression[A]): Either[EvaluationError, A]
 
-  def evaluateAsVector[A: Decoder: TypeTag](expression: Expression): Either[EvaluationError, Vector[A]]
+  def evaluateVector[A: Decoder: TypeTag](expression: Expression[A]): Either[EvaluationError, Vector[A]]
 
-  def evaluateAsOption[A: Decoder: TypeTag](expression: Expression): Either[EvaluationError, Option[A]]
+  def evaluateOption[A: Decoder: TypeTag](expression: Expression[A]): Either[EvaluationError, Option[A]] =
+    evaluate(expression.as[Option[A]])
 
 }
 
@@ -21,17 +22,17 @@ object ExpressionEvaluator {
 
   def apply(json: Json): ExpressionEvaluator = new ExpressionEvaluatorImpl(json.hcursor)
 
-  private class ExpressionEvaluatorImpl(cursor: ACursor) extends ExpressionEvaluator {
+  private class ExpressionEvaluatorImpl(root: ACursor) extends ExpressionEvaluator {
 
-    def evaluateAsJson(expression: Expression): Either[EvaluationError, Json] =
+    def evaluateAsJson(expression: Expression[?]): Either[EvaluationError, Json] =
       expression match {
-        case me @ MappedExpression(e, _) => evaluateAsJson(e).flatMap(me.apply)
+        case me @ MappedExpression(e, _) => evaluateAsJson(e).flatMap(me(root))
 
-        case fe @ FlatMappedExpression(e, _) => evaluateAsJson(e).flatMap(fe.apply).flatMap(evaluateAsJson)
+        case fe @ FlatMappedExpression(e, _) => evaluateAsJson(e).flatMap(fe(root)).flatMap(evaluateAsJson)
 
-        case TypedExpression(expression) => evaluateAsJson(expression)
+        case CastedExpression(expression) => evaluateAsJson(expression)
 
-        case jsonPath: JsonPath => Right(JsonPathEvaluator.evaluate(cursor, jsonPath).asJson)
+        case jsonPath: JsonPath => Right(JsonPathEvaluator.evaluate(root, jsonPath).asJson)
 
         case Value(value) => Right(value)
 
@@ -46,16 +47,16 @@ object ExpressionEvaluator {
         case ExpressionList(expressions) => expressions.toVector.flatTraverse(evaluateAsJsonArr).map(Json.arr(_*))
       }
 
-    def evaluateAsJsonArr(expression: Expression): Either[EvaluationError, Vector[Json]] =
+    def evaluateAsJsonArr(expression: Expression[?]): Either[EvaluationError, Vector[Json]] =
       expression match {
-        case me @ MappedExpression(e, _) => evaluateAsJsonArr(e).flatMap(_.traverse(me.apply))
+        case me @ MappedExpression(e, _) => evaluateAsJsonArr(e).flatMap(_.traverse(me(root)))
 
         case fe @ FlatMappedExpression(e, _) =>
-          evaluateAsJsonArr(e).flatMap(_.traverse(fe.apply)).flatMap(_.flatTraverse(evaluateAsJsonArr))
+          evaluateAsJsonArr(e).flatMap(_.traverse(fe(root))).flatMap(_.flatTraverse(evaluateAsJsonArr))
 
-        case TypedExpression(expression) => evaluateAsJsonArr(expression)
+        case CastedExpression(expression) => evaluateAsJsonArr(expression)
 
-        case jsonPath: JsonPath => Right(JsonPathEvaluator.evaluate(cursor, jsonPath).asJsonArr)
+        case jsonPath: JsonPath => Right(JsonPathEvaluator.evaluate(root, jsonPath).asJsonArr)
 
         case Value(value) => Right(value.asArray.getOrElse(Vector(value)).filterNot(_.isNull))
 
@@ -70,20 +71,17 @@ object ExpressionEvaluator {
         case ExpressionList(expressions) => expressions.toVector.flatTraverse(evaluateAsJsonArr)
       }
 
-    def evaluateAs[A: Decoder: TypeTag](expression: Expression): Either[EvaluationError, A] =
+    def evaluate[A: Decoder: TypeTag](expression: Expression[A]): Either[EvaluationError, A] =
       evaluateAsJson(expression)
-        .flatMap(json => json.as[A].left.map(_ => ExtractionError[A](json)))
+        .flatMap(json => json.as[A].left.map(_ => ExtractionError[A](json, expression, root)))
 
-    def evaluateAsVector[A: Decoder: TypeTag](expression: Expression): Either[EvaluationError, Vector[A]] = {
+    def evaluateVector[A: Decoder: TypeTag](expression: Expression[A]): Either[EvaluationError, Vector[A]] = {
       evaluateAsJson(expression).flatMap(json =>
         json.asArray
-          .map(_.traverse(jsonItem => jsonItem.as[A].left.map(_ => ExtractionError[A](jsonItem))))
-          .getOrElse(json.as[Option[A]].left.map(_ => ExtractionError[A](json)).map(_.toVector)),
+          .map(_.traverse(jsonItem => jsonItem.as[A].left.map(_ => ExtractionError[A](jsonItem, expression, root))))
+          .getOrElse(json.as[Option[A]].left.map(_ => ExtractionError[A](json, expression, root)).map(_.toVector)),
       )
     }
-
-    def evaluateAsOption[A: Decoder: TypeTag](expression: Expression): Either[EvaluationError, Option[A]] =
-      evaluateAs[Option[A]](expression)
 
     private def evaluateBoolean(condition: BooleanExpression): Either[EvaluationError, Boolean] = condition match {
       case BooleanExpression.And(a, b) =>

@@ -5,7 +5,7 @@ class ConditionalDefaultSpec
       Scenario(
         hint = "Default to constant for non-existing JSON property",
         json = """{}""",
-        expr = ($ / "foo").defaultTo(Value("bar")),
+        expr = ($ / "foo").defaultTo(Value.json("bar")),
         expectedOutput = "bar",
       ),
       Scenario(

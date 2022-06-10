@@ -1,71 +1,102 @@
 package j2j
 
-import io.circe.{Decoder, Encoder, Json}
+import io.circe.{ACursor, Decoder, Encoder, Json, Printer}
 import j2j.SeqSyntax.SeqExt
 
 import scala.reflect.ClassTag
-import scala.reflect.runtime.universe.TypeTag
+import scala.reflect.runtime.universe.{TypeTag, typeTag}
 import scala.util.matching.Regex
 import scala.util.matching.Regex.Match
 
-sealed trait Expression {
+sealed trait Expression[T] extends Printable {
 
-  def when(booleanExpression: BooleanExpression, default: Expression = Value.Empty): ConditionalExpression =
+  def when(booleanExpression: BooleanExpression, default: Expression[T] = Value.empty[T]): ConditionalExpression[T] =
     ConditionalExpression(this, booleanExpression, default)
 
-  def defaultTo(default: Expression): Expression =
+  def defaultTo(default: Expression[T]): Expression[T] =
     ConditionalExpression(this, notNull, default)
 
-  def as[T: Decoder: TypeTag]: TypedExpression[T] =
-    TypedExpression(this)
+  def as[U: Decoder: TypeTag]: CastedExpression[U] =
+    CastedExpression(this)
 
-  def matches(that: Expression): BooleanExpression  = BooleanExpression.Matches(this, that)
-  def contains(that: Expression): BooleanExpression = BooleanExpression.Contains(this, that)
-  def oneOf(that: Expression): BooleanExpression    = BooleanExpression.OneOf(this, that)
-  def overlaps(that: Expression): BooleanExpression = BooleanExpression.Overlaps(this, that)
-  def notNull: BooleanExpression                    = BooleanExpression.NotNull(this)
+  def asJson: CastedExpression[Json] =
+    CastedExpression(this)
 
-}
-
-case class TypedExpression[T: Decoder: TypeTag](expression: Expression) extends Expression {
-  def map[U: Encoder](f: T => U): Expression =
+  def map[U: Encoder: TypeTag](f: T => U)(implicit d: Decoder[T], t: TypeTag[T]): Expression[U] =
     MappedExpression(this, f)
 
-  def flatMap(f: T => Expression): Expression =
+  def flatMap[U: TypeTag](f: T => Expression[U])(implicit tDec: Decoder[T], tTyp: TypeTag[T]): Expression[U] =
     FlatMappedExpression(this, f)
+
+  def matches(that: Expression[?]): BooleanExpression  = BooleanExpression.Matches(this, that)
+  def contains(that: Expression[?]): BooleanExpression = BooleanExpression.Contains(this, that)
+  def oneOf(that: Expression[?]): BooleanExpression    = BooleanExpression.OneOf(this, that)
+  def overlaps(that: Expression[?]): BooleanExpression = BooleanExpression.Overlaps(this, that)
+  def notNull: BooleanExpression                       = BooleanExpression.NotNull(this)
+
 }
 
-case class MappedExpression[T: Decoder: TypeTag, U: Encoder](expression: Expression, f: T => U) extends Expression {
-  def apply(json: Json): Either[EvaluationError, Json] =
+case class CastedExpression[T: Decoder: TypeTag](expression: Expression[?]) extends Expression[T] {
+  override def prettyPrint(indent: Int): String =
+    (Console.BLUE + Console.BOLD + "cast" + Console.RESET) +
+      (Console.CYAN + s"[${typeTag[T].tpe}]" + Console.RESET) +
+      newLine(indent + 1) +
+      expression.prettyPrint(indent + 1)
+}
+
+case class MappedExpression[T: Decoder: TypeTag, U: Encoder: TypeTag](expression: Expression[T], f: T => U) extends Expression[U] {
+  override def prettyPrint(indent: Int): String =
+    (Console.BLUE + Console.BOLD + "map" + Console.RESET) +
+      (Console.CYAN + s"[${typeTag[U].tpe}]" + Console.RESET) +
+      newLine(indent + 1) +
+      expression.prettyPrint(indent + 1)
+
+  def apply(root: ACursor)(json: Json): Either[EvaluationError, Json] =
     json
       .as[T]
       .map(f)
+      .left
+      .map(_ => ExtractionError[T](json, expression, root))
       .map(Encoder[U].apply)
-      .left
-      .map(_ => ExtractionError[T](json))
 }
 
-case class FlatMappedExpression[T: Decoder: TypeTag](expression: Expression, f: T => Expression) extends Expression {
-  def apply(json: Json): Either[EvaluationError, Expression] =
+case class FlatMappedExpression[T: Decoder: TypeTag, U: TypeTag](expression: Expression[T], f: T => Expression[U]) extends Expression[U] {
+  override def prettyPrint(indent: Int): String =
+    (Console.BLUE + Console.BOLD + "flatMap" + Console.RESET) +
+      (Console.CYAN + s"[${typeTag[U].tpe}]" + Console.RESET) +
+      newLine(indent + 1) +
+      expression.prettyPrint(indent + 1)
+
+  def apply(root: ACursor)(json: Json): Either[EvaluationError, Expression[U]] =
     json
       .as[T]
-      .map(f)
       .left
-      .map(_ => ExtractionError[T](json))
+      .map(_ => ExtractionError[T](json, expression, root))
+      .map(f)
 }
 
-case class Value private (value: Json) extends Expression
+case class Value[T] private (value: Json) extends Expression[T] {
+  override def prettyPrint(indent: Int): String =
+    value.printWith(Printer.noSpaces)
+}
 
 object Value {
-  val Empty = new Value(Json.Null)
+  def empty[T]: Value[T] = new Value(Json.Null)
 
-  def apply[T: Encoder](value: T): Value = Value(Encoder[T].apply(value))
+  def apply[T: Encoder](value: T): Value[T]   = Value(Encoder[T].apply(value))
+  def json[T: Encoder](value: T): Value[Json] = Value(Encoder[T].apply(value))
+
 }
 
-case class Variable private (value: () => Json) extends Expression
+case class Variable[T: TypeTag] private (value: () => Json) extends Expression[T] {
+  override def prettyPrint(indent: Int): String =
+    (Console.MAGENTA + "variable" + Console.RESET) +
+      (Console.CYAN + s"[${typeTag[T].tpe}]" + Console.RESET)
+
+}
 
 object Variable {
-  def apply[T: Encoder](value: () => T): Variable = Variable(() => Encoder[T].apply(value()))
+  def apply[T: Encoder: TypeTag](value: () => T): Variable[T] = Variable(() => Encoder[T].apply(value()))
 }
 
 sealed trait Star
@@ -73,12 +104,14 @@ object * extends Star
 
 object $ extends JsonPath.Empty
 
-sealed trait JsonPath extends Expression {
+sealed trait JsonPath extends Expression[Json] {
+
   def /:(s: JsonPath.Segment): JsonPath = JsonPath.NonEmpty(s, this)
   def toList: List[JsonPath.Segment]
   def ++(j: JsonPath): JsonPath
 
-  override def toString: String = s"$$${toList.mkString}"
+  override def prettyPrint(indent: Int): String =
+    Console.GREEN + Console.BOLD + s"$$${toList.mkString}" + Console.RESET
 
   def /(s: String): JsonPath
   def /(i: Int): JsonPath
@@ -175,14 +208,36 @@ object JsonPath {
 
 }
 
-case class ConditionalExpression(
-    value: Expression,
+case class ConditionalExpression[T](
+    value: Expression[T],
     when: BooleanExpression,
-    defaultTo: Expression,
-) extends Expression
+    defaultTo: Expression[T],
+) extends Expression[T] {
 
-case class ExpressionList private (expressions: Vector[Expression]) extends Expression
+  override def prettyPrint(indent: Int): String = {
+    (Console.BLUE + Console.BOLD + "if" + Console.RESET) +
+      newLine(indent + 1) +
+      when.prettyPrint(indent + 1) +
+      newLine(indent) +
+      (Console.BLUE + Console.BOLD + "then" + Console.RESET) +
+      newLine(indent + 1) +
+      value.prettyPrint(indent + 1) +
+      newLine(indent) +
+      (Console.BLUE + Console.BOLD + "else" + Console.RESET) +
+      newLine(indent + 1) +
+      defaultTo.prettyPrint(indent + 1)
+  }
+
+}
+
+case class ExpressionList[T] private (expressions: Vector[Expression[T]]) extends Expression[Vector[T]] {
+  override def prettyPrint(indent: Int): String =
+    expressions
+      .map(_.prettyPrint(indent + 1))
+      .map(p => newLine(indent + 1) + p)
+      .mkString("[", ",", newLine(indent) + "]")
+}
 
 object ExpressionList {
-  def apply(expressions: Expression*): ExpressionList = new ExpressionList(expressions.toVector)
+  def apply[T](expressions: Expression[T]*): ExpressionList[T] = new ExpressionList(expressions.toVector)
 }
